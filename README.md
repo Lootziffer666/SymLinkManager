@@ -17,7 +17,6 @@ Das lokale Windows-Tool, das chaotische Systeme wieder wartbar macht – **ohne 
 
 ### Status
 **v0.1 Prototype** (März 2026) – Kernfunktionen laufen stabil  
-Dein Logo ist bereits eingebunden.
 
 ### Schnellstart
 1. Python 3.12 installieren  
