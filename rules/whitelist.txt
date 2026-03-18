@@ -1,0 +1,10 @@
+# Eine Regel pro Zeile (substring auf normalizedName)
+# Whitelist schützt standardmäßig vor Presets/Auto-Markierungen
+
+nvidia grafiktreiber
+intel wireless bluetooth
+realtek high definition audio
+vulkan run time libraries
+visual c++
+.net runtime
+windows sdk

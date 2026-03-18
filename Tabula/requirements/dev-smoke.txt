@@ -1,0 +1,3 @@
+-r gui.txt
+-r core.txt
+-r ai_companion.txt

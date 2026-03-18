@@ -1,0 +1,8 @@
+# Tasks, die standardmäßig geschützt werden (substring auf TaskPath/TaskName)
+\microsoft\windows\defender
+\microsoft\windows\updateorchestrator
+\microsoft\windows\waasmedic
+\microsoft\windows\windowsupdate
+\microsoft\windows\systemrestore
+\microsoft\windows\recoveryenvironment
+\microsoft\windows\storage

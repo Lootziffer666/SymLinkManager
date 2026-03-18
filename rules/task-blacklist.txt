@@ -1,0 +1,10 @@
+# Kandidaten für Triage (nicht automatisch deaktivieren)
+# Diese Regeln markieren nur Review-Kandidaten.
+
+updater
+assistant update
+autoupdate
+telemetry
+helper
+obsolete
+orphan

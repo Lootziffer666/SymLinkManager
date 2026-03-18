@@ -1,0 +1,8 @@
+# Overview requirements (recommended full setup)
+# Windows full install:
+#   pip install -r requirements.txt
+
+-r requirements/gui.txt
+-r requirements/core.txt
+-r requirements/ai_companion.txt
+-r requirements/windows.txt
