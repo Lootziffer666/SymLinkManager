@@ -1,0 +1,88 @@
+{
+  "apps": [
+    {
+      "name": "True Debloat Undo",
+      "category": "Snapshot & Restore",
+      "risk": "Medium",
+      "script": "Addons/maintenance/true_debloat_undo.py",
+      "description": "Snapshot/Restore für Registry, Appx, Services vor Debloat-Aktionen."
+    },
+    {
+      "name": "PathSafe Duplicate",
+      "category": "Files",
+      "risk": "Low",
+      "script": "Addons/maintenance/pathsafe_duplicate.py",
+      "description": "Keep-Best Duplicate Scan mit Long-Path-Härtung."
+    },
+    {
+      "name": "Vendor Bloat Guardian",
+      "category": "OEM Cleanup",
+      "risk": "High",
+      "script": "Addons/maintenance/vendor_bloat_guardian.py",
+      "description": "Erkennt und blockiert bekannte OEM-Autoinstaller-Trigger."
+    },
+    {
+      "name": "Safe ARP Cleaner",
+      "category": "Registry",
+      "risk": "Medium",
+      "script": "Addons/maintenance/safe_arp_cleaner.py",
+      "description": "Findet und entfernt verwaiste ARP-Uninstall-Einträge."
+    },
+    {
+      "name": "Update Guard",
+      "category": "Windows Update",
+      "risk": "Medium",
+      "script": "Addons/system_repair/update_guard.py",
+      "description": "Snapshot + sichere Vorschau für Windows-Update-Reset-Aktionen."
+    },
+    {
+      "name": "Context Menu Safe Cleaner",
+      "category": "Shell",
+      "risk": "Medium",
+      "script": "Addons/system_repair/context_menu_cleaner.py",
+      "description": "Blockiert bekannte problematische Context-Menu-Erweiterungen."
+    },
+    {
+      "name": "Background Killer",
+      "category": "Processes",
+      "risk": "High",
+      "script": "Addons/system_repair/background_killer.py",
+      "description": "Analysiert und beendet ausgewählte Hintergrundprozesse/Services."
+    },
+    {
+      "name": "OneDrive Repair Guard",
+      "category": "Repair",
+      "risk": "Medium",
+      "script": "Addons/system_repair/onedrive_repair_guard.py",
+      "description": "Preview-gestützte OneDrive-Reparatur-Abläufe."
+    },
+    {
+      "name": "Explorer Shell Guard",
+      "category": "Shell",
+      "risk": "Medium",
+      "script": "Addons/ai_shell/explorer_shell_guard.py",
+      "description": "Desktop-/Explorer-Shell Snapshot und Safe Reset."
+    },
+    {
+      "name": "Recall Storage Wiper",
+      "category": "AI Data",
+      "risk": "High",
+      "script": "Addons/ai_shell/recall_storage_wiper.py",
+      "description": "Findet/löscht Recall-Speicherpfade nach expliziter Bestätigung."
+    },
+    {
+      "name": "NPU Guard",
+      "category": "AI Control",
+      "risk": "High",
+      "script": "Addons/ai_shell/npu_guard.py",
+      "description": "Policy-Befehle zur Begrenzung von NPU/Copilot-Restlast."
+    },
+    {
+      "name": "Winget Source Fix",
+      "category": "Package Mgmt",
+      "risk": "Low",
+      "script": "Addons/ai_shell/winget_source_fix.py",
+      "description": "Setzt Winget-Quellen zurück und aktualisiert sie."
+    }
+  ]
+}

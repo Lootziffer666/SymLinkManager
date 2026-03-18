@@ -1,0 +1,7 @@
+psutil
+pywin32
+pymupdf
+python-docx
+rapidfuzz
+xxhash
+pillow

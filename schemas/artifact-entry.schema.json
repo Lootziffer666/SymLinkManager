@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ArtifactEntry",
+  "type": "object",
+  "required": [
+    "id",
+    "path",
+    "extension",
+    "sizeBytes",
+    "modifiedUtc",
+    "displayNameGuess",
+    "normalizedNameGuess",
+    "kind",
+    "riskLevel",
+    "infoCheck",
+    "relation"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "path": { "type": "string" },
+    "extension": { "enum": [".zip", ".rar", ".7z", ".msi", ".exe"] },
+    "sizeBytes": { "type": "integer", "minimum": 0 },
+    "modifiedUtc": { "type": "string" },
+    "displayNameGuess": { "type": "string" },
+    "normalizedNameGuess": { "type": "string" },
+    "vendorGuess": { "type": "string" },
+    "versionGuess": { "type": "string" },
+    "kind": { "enum": ["Installer", "Archive", "PortableApp", "Patch", "Unknown"] },
+    "riskLevel": { "enum": ["Low", "Medium", "High"] },
+    "infoCheck": {
+      "type": "object",
+      "required": ["source", "confidence", "summary", "tags"],
+      "properties": {
+        "source": { "type": "array", "items": { "type": "string" } },
+        "confidence": { "enum": ["Low", "Medium", "High"] },
+        "summary": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "required": ["matchesInstalled", "matchedProgramIds", "relationType", "relationConfidence", "relationNotes"],
+      "properties": {
+        "matchesInstalled": { "type": "boolean" },
+        "matchedProgramIds": { "type": "array", "items": { "type": "string" } },
+        "relationType": { "enum": ["SameProduct", "PotentialAlternative", "BundleOverlap", "Unknown"] },
+        "relationConfidence": { "enum": ["Low", "Medium", "High"] },
+        "relationNotes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "archiveCheck": {
+      "type": "object",
+      "properties": {
+        "encrypted": { "type": "boolean" },
+        "passwordMatchState": { "enum": ["NotChecked", "MatchFound", "NoMatch", "Corrupt", "Unsupported"] },
+        "matchedPasswordAlias": { "type": "string" },
+        "testMethod": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

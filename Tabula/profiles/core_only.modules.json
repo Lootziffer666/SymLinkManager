@@ -1,0 +1,11 @@
+{
+  "module_manager": true,
+  "programs": true,
+  "archives": false,
+  "uwp_ai": false,
+  "tasks_services": true,
+  "privacy": true,
+  "duplicates": false,
+  "micro_apps": false,
+  "plan_execute": true
+}

@@ -1,0 +1,18 @@
+# Python & Tabula
+__pycache__/
+*.pyc
+tabula_backups/
+TrueUndo_Backups/
+ShellGuard_Backups/
+*.reg
+*.xml
+*.json.bak
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE
+.vscode/
+.idea/
