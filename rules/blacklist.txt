@@ -1,0 +1,8 @@
+# Eine Regel pro Zeile (substring auf normalizedName)
+# Blacklist markiert nur, wenn kein Hard-Block greift
+
+demo
+playtest
+beta playtest
+outdated installer
+old version

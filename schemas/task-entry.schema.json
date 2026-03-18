@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskEntry",
+  "type": "object",
+  "required": [
+    "id",
+    "taskPath",
+    "taskName",
+    "state",
+    "source",
+    "category",
+    "riskLevel",
+    "health",
+    "recommendation",
+    "recommendationReason"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "taskPath": { "type": "string" },
+    "taskName": { "type": "string" },
+    "author": { "type": "string" },
+    "state": { "enum": ["Ready", "Running", "Queued", "Disabled", "Unknown"] },
+    "lastRunTime": { "type": "string" },
+    "nextRunTime": { "type": "string" },
+    "triggerSummary": { "type": "string" },
+    "actionSummary": { "type": "string" },
+    "principal": { "type": "string" },
+    "source": { "enum": ["Microsoft", "Vendor", "User", "Unknown"] },
+    "category": { "enum": ["SystemCritical", "Security", "Update", "Maintenance", "Telemetry", "AppSupport", "Unknown"] },
+    "riskLevel": { "enum": ["Low", "Medium", "High"] },
+    "health": { "enum": ["OK", "Unavailable", "Orphaned", "BrokenAction"] },
+    "recommendation": { "enum": ["Keep", "DisableCandidate", "DeleteCandidate", "Investigate"] },
+    "recommendationReason": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    }
+  }
+}

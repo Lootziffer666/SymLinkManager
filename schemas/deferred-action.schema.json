@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DeferredAction",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "target",
+    "commandPreview",
+    "schedule",
+    "requiresAdmin",
+    "riskLevel",
+    "createdUtc",
+    "status"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "type": { "enum": ["Uninstall", "Delete", "Move", "ACLFix", "CacheClean", "LinkRepair"] },
+    "target": { "type": "string" },
+    "commandPreview": { "type": "string" },
+    "schedule": { "enum": ["Now", "Relogin", "Reboot"] },
+    "requiresAdmin": { "type": "boolean" },
+    "riskLevel": { "enum": ["Low", "Medium", "High"] },
+    "createdUtc": { "type": "string" },
+    "status": { "enum": ["Queued", "Running", "Done", "Failed", "Cancelled"] },
+    "logPath": { "type": "string" }
+  }
+}

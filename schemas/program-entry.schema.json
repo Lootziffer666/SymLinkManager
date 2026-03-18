@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProgramEntry",
+  "type": "object",
+  "required": [
+    "id",
+    "selected",
+    "rawDisplayName",
+    "normalizedName",
+    "recordType",
+    "category",
+    "riskLevel",
+    "estimatedInstallBytes",
+    "estimatedUserDataBytes",
+    "estimatedScreenshotBytes",
+    "estimatedTotalBytes",
+    "estimatedTotalHuman",
+    "estimateConfidence",
+    "estimateNotes",
+    "legalStatus",
+    "legalAlternativeCandidates",
+    "duplicateCount",
+    "duplicateSources",
+    "importMatch",
+    "safetyFlags"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "selected": { "type": "boolean" },
+    "rawDisplayName": { "type": "string" },
+    "normalizedName": { "type": "string" },
+    "displayVersion": { "type": "string" },
+    "publisher": { "type": "string" },
+    "recordType": { "enum": ["App", "Microsoft", "Runtime", "Driver", "Hotfix"] },
+    "category": {
+      "enum": ["Game", "Launcher", "Creative", "Utility", "DevTool", "Other", "Runtime", "Driver", "Microsoft", "Hotfix"]
+    },
+    "riskLevel": { "enum": ["Low", "Medium", "High"] },
+    "installLocation": { "type": "string" },
+    "uninstallString": { "type": "string" },
+    "quietUninstallString": { "type": "string" },
+    "windowsEstimatedSizeKB": { "type": "integer", "minimum": 0 },
+    "estimatedInstallBytes": { "type": "integer", "minimum": 0 },
+    "estimatedUserDataBytes": { "type": "integer", "minimum": 0 },
+    "estimatedScreenshotBytes": { "type": "integer", "minimum": 0 },
+    "estimatedTotalBytes": { "type": "integer", "minimum": 0 },
+    "estimatedTotalHuman": { "type": "string" },
+    "estimateConfidence": { "enum": ["Low", "Medium", "High"] },
+    "estimateNotes": { "type": "array", "items": { "type": "string" } },
+    "legalStatus": { "enum": ["Free", "Free Tier", "Free Available", "Paid", "Paid/Trial", "Unknown"] },
+    "legalAlternativeHint": { "type": "string" },
+    "legalAlternativeCandidates": { "type": "array", "items": { "type": "string" } },
+    "duplicateCount": { "type": "integer", "minimum": 0 },
+    "duplicateSources": { "type": "array", "items": { "type": "string" } },
+    "importMatch": {
+      "type": "object",
+      "required": ["state", "score", "notes"],
+      "properties": {
+        "state": { "enum": ["None", "Exact", "Fuzzy", "Weak"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "importedLine": { "type": "string" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "safetyFlags": {
+      "type": "object",
+      "required": ["blockedByPolicy", "requiresAdmin", "manualRemovalNeeded", "rebootRecommended", "reloginRecommended"],
+      "properties": {
+        "blockedByPolicy": { "type": "boolean" },
+        "requiresAdmin": { "type": "boolean" },
+        "manualRemovalNeeded": { "type": "boolean" },
+        "rebootRecommended": { "type": "boolean" },
+        "reloginRecommended": { "type": "boolean" }
+      }
+    }
+  }
+}
