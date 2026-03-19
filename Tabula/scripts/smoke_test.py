@@ -101,7 +101,6 @@ def dependency_check() -> bool:
         "customtkinter",
         "psutil",
         "py7zr",
-        "pydantic",
         "PIL",
         "rapidfuzz",
         "xxhash",
