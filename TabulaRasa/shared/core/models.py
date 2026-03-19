@@ -30,72 +30,63 @@ class RiskLevel(str, Enum):
     HIGH = "High"
 
 
-class FolderKind(str, Enum):
-    CACHE = "Cache"
+class PurgeKind(str, Enum):
     TEMP = "Temp"
+    CACHE = "Cache"
     SHADER_CACHE = "ShaderCache"
     LOGS = "Logs"
+    THUMBNAILS = "Thumbnails"
     SCREENSHOTS = "Screenshots"
-    SUPPORT_DATA = "SupportData"
-    SAVE_DATA = "SaveData"
-    INSTALL_DATA = "InstallData"
+    CAPTURES = "Captures"
+    INSTALLER_LEFTOVERS = "InstallerLeftovers"
+    UPDATER_RESIDUE = "UpdaterResidue"
+    APP_RESIDUE = "AppResidue"
+    ORPHANED_APP_DATA = "OrphanedAppData"
     UNKNOWN = "Unknown"
 
 
 class RecommendedAction(str, Enum):
-    KEEP = "Keep"
     PURGE = "Purge"
-    RELOCATE = "Relocate"
     REVIEW = "Review"
+    KEEP = "Keep"
 
 
-class RelocationState(str, Enum):
-    NOT_RELOCATED = "NotRelocated"
-    RELOCATED = "Relocated"
-    BROKEN_LINK = "BrokenLink"
-    NEEDS_VALIDATION = "NeedsValidation"
-
-
-class LinkType(str, Enum):
-    JUNCTION = "Junction"
-    SYMLINK = "Symlink"
+class ExecutionMode(str, Enum):
+    DRY_RUN = "DryRun"
+    SAFE = "RecycleBinPreferred"
+    AGGRESSIVE = "PermanentDelete"
 
 
 @dataclass(slots=True)
-class TabulaItem(SerializableDataclass):
+class PurgeItem(SerializableDataclass):
     id: str
-    display_name: str
-    path: str
-    normalized_path: str
-    source_type: str = "KnownPath"
+    selected: bool = False
+    display_name: str = ""
+    path: str = ""
     owner_hint: Optional[str] = None
-    kind: FolderKind = FolderKind.UNKNOWN
+    kind: PurgeKind = PurgeKind.UNKNOWN
     risk_level: RiskLevel = RiskLevel.MEDIUM
     recommended_action: RecommendedAction = RecommendedAction.REVIEW
     size_bytes: int = 0
     size_human: str = "0 B"
-    item_count: Optional[int] = None
     confidence: str = "Medium"
+    detection_source: str = "KnownPath"
     notes: Optional[str] = None
-    managed_by_tabula: bool = False
-    relocation_state: RelocationState = RelocationState.NOT_RELOCATED
-    original_path: Optional[str] = None
-    target_path: Optional[str] = None
-    link_type: Optional[LinkType] = None
-    last_validated_at: Optional[datetime] = None
+    review_required: bool = False
 
 
 @dataclass(slots=True)
-class RelocationRecord(SerializableDataclass):
+class PurgeRun(SerializableDataclass):
     id: str
-    source_path: str
-    target_path: str
-    link_type: LinkType
-    created_at: datetime
-    validated: bool = False
-    validation_notes: Optional[str] = None
-    undo_supported: bool = True
-    status: str = "Active"
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    mode: ExecutionMode = ExecutionMode.DRY_RUN
+    selected_item_count: int = 0
+    estimated_bytes: int = 0
+    deleted_bytes: Optional[int] = None
+    skipped_count: int = 0
+    failed_count: int = 0
+    log_path: str = ""
 
 
 def _serialize_value(value):
