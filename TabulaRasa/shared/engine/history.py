@@ -17,10 +17,10 @@ class PurgeLedger:
 
     def load(self) -> list[PurgeRun]:
         data = json.loads(self.ledger_path.read_text(encoding="utf-8"))
-        return [PurgeRun.model_validate(entry) for entry in data]
+        return [PurgeRun.from_dict(entry) for entry in data]
 
     def save(self, runs: list[PurgeRun]) -> None:
-        self.ledger_path.write_text(json.dumps([run.model_dump(mode="json") for run in runs], indent=2), encoding="utf-8")
+        self.ledger_path.write_text(json.dumps([run.to_dict() for run in runs], indent=2), encoding="utf-8")
 
     def append(self, run: PurgeRun) -> None:
         runs = self.load()
@@ -37,5 +37,5 @@ class PurgeLedger:
             writer = csv.DictWriter(handle, fieldnames=["id", "started_at", "finished_at", "mode", "selected_item_count", "estimated_bytes", "deleted_bytes", "skipped_count", "failed_count", "log_path"])
             writer.writeheader()
             for run in runs:
-                writer.writerow(run.model_dump(mode="json"))
+                writer.writerow(run.to_dict())
         return destination

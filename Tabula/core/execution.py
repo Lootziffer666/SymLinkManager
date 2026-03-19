@@ -45,7 +45,7 @@ class ExecutionEngine:
             validation_notes="Planned only in this environment.",
         )
         self.ledger.append(record)
-        self._log({"event": "relocation_planned", **record.model_dump(mode="json")})
+        self._log({"event": "relocation_planned", **record.to_dict()})
         return record
 
     def validate_links(self) -> list[RelocationRecord]:

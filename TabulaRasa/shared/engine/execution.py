@@ -50,7 +50,7 @@ class ExecutionEngine:
         run.deleted_bytes = 0 if mode == ExecutionMode.DRY_RUN else run.estimated_bytes
         run.finished_at = datetime.now()
         self.ledger.append(run)
-        self._log({"event": "run_finished", **run.model_dump(mode="json")}, run.log_path)
+        self._log({"event": "run_finished", **run.to_dict()}, run.log_path)
         return results
 
     def what_would_delete_today(self) -> list[str]:

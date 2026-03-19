@@ -17,10 +17,10 @@ class RelocationLedger:
 
     def load(self) -> list[RelocationRecord]:
         data = json.loads(self.registry_path.read_text(encoding="utf-8"))
-        return [RelocationRecord.model_validate(row) for row in data]
+        return [RelocationRecord.from_dict(row) for row in data]
 
     def save_all(self, records: Iterable[RelocationRecord]) -> None:
-        payload = [record.model_dump(mode="json") for record in records]
+        payload = [record.to_dict() for record in records]
         self.registry_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def append(self, record: RelocationRecord) -> None:
