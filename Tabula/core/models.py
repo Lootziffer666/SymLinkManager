@@ -60,6 +60,9 @@ class LinkType(str, Enum):
     JUNCTION = "Junction"
     SYMLINK = "Symlink"
 
+class LinkType(str, Enum):
+    JUNCTION = "Junction"
+    SYMLINK = "Symlink"
 
 @dataclass(slots=True)
 class TabulaItem(SerializableDataclass):
