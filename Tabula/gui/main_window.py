@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import json
-import logging
-import traceback
+import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from core.planner import SafePlanner
-from gui.module_api import AppContext
-from gui.module_registry import MODULES
+from core.execution import ExecutionEngine
+from core.models import LinkType, TabulaItem
+from core.scanners import filter_items, scan_storage_map
+from links.link_manager import LinkManager
+from relocate.relocator import Relocator
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -19,58 +19,224 @@ ctk.set_default_color_theme("dark-blue")
 class TabulaApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Tabula – Barebone Host")
-        self.geometry("1420x940")
+        self.title("Tabula – Map. Move. Link.")
+        self.geometry("1480x980")
 
-        icon_path = Path(__file__).resolve().parents[1] / "tabula_icon.ico"
-        if icon_path.exists():
-            try:
-                self.iconbitmap(str(icon_path))
-            except Exception:
-                pass
-
-        self.context = AppContext(planner=SafePlanner())
-        self.module_config = self._load_module_config()
-        self.available_modules = [{"id": cls.module_id, "title": cls.title, "class": cls} for cls in MODULES]
+        self.engine = ExecutionEngine()
+        self.relocator = Relocator(self.engine)
+        self.link_manager = LinkManager(self.engine)
+        self.current_items: list[TabulaItem] = []
+        self.filtered_items: list[TabulaItem] = []
 
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=15, pady=15)
+        for tab_name in ["Map", "Relocate", "Links", "History"]:
+            self.tabview.add(tab_name)
 
-        self._mount_modules()
+        self._build_map_screen()
+        self._build_relocate_screen()
+        self._build_links_screen()
+        self._build_history_screen()
+        self.refresh_links()
+        self.refresh_history()
 
-        self.report_callback_exception = self._report_callback_exception
+    def _build_map_screen(self) -> None:
+        tab = self.tabview.tab("Map")
+        ctk.CTkLabel(tab, text="Storage Map – visibility before action", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=12)
 
+        controls = ctk.CTkFrame(tab)
+        controls.pack(fill="x", padx=12, pady=8)
+        ctk.CTkButton(controls, text="Scan storage map", command=self.start_scan).pack(side="left", padx=6)
+        self.risk_var = tk.StringVar(value="All")
+        self.action_var = tk.StringVar(value="All")
+        self.scan_status = tk.StringVar(value="Click 'Scan storage map' to load relocation candidates.")
+        ctk.CTkOptionMenu(controls, values=["All", "Low", "Medium", "High"], variable=self.risk_var, command=lambda _v: self.apply_filter()).pack(side="left", padx=6)
+        ctk.CTkOptionMenu(controls, values=["All", "Keep", "Purge", "Relocate", "Review"], variable=self.action_var, command=lambda _v: self.apply_filter()).pack(side="left", padx=6)
 
-    def _load_module_config(self) -> dict[str, bool]:
-        config_path = Path(__file__).resolve().parents[1] / "modules.json"
-        if config_path.exists():
-            return json.loads(config_path.read_text(encoding="utf-8"))
-        defaults = {cls.module_id: True for cls in MODULES}
-        defaults["module_manager"] = True
-        defaults["plan_execute"] = True
-        config_path.write_text(json.dumps(defaults, indent=2, ensure_ascii=False), encoding="utf-8")
-        return defaults
+        columns = ("Name", "Kind", "Size", "Risk", "Action", "Owner", "Path")
+        self.map_tree = ttk.Treeview(tab, columns=columns, show="headings", height=20)
+        for col, width in zip(columns, [220, 130, 100, 90, 110, 140, 520]):
+            self.map_tree.heading(col, text=col)
+            self.map_tree.column(col, width=width, anchor="w")
+        self.map_tree.pack(fill="both", expand=True, padx=12, pady=8)
+        self.map_tree.bind("<<TreeviewSelect>>", self.show_detail)
 
-    def _mount_modules(self) -> None:
-        for module_cls in MODULES:
-            module_id = module_cls.module_id
-            enabled = bool(self.module_config.get(module_id, True))
-            if not enabled and module_id not in {"module_manager", "plan_execute"}:
-                continue
+        ctk.CTkLabel(tab, textvariable=self.scan_status, anchor="w", justify="left").pack(fill="x", padx=12, pady=(0, 6))
 
-            self.tabview.add(module_cls.title)
-            container = self.tabview.tab(module_cls.title)
-            module_cls().build(container=container, app=self, context=self.context)
+        self.detail_text = ctk.CTkTextbox(tab, height=180)
+        self.detail_text.pack(fill="x", padx=12, pady=8)
+        self.detail_text.insert("1.0", "No scan results yet.")
+        ctk.CTkButton(tab, text="Use selected item in Relocate", fg_color="#17803d", command=self.prepare_relocation).pack(pady=6)
 
-    def _report_callback_exception(self, exc, val, tb) -> None:
-        logging.getLogger("tabula.gui").error(
-            "Unhandled Tk callback exception: %s\n%s",
-            val,
-            "".join(traceback.format_exception(exc, val, tb)),
+    def _build_relocate_screen(self) -> None:
+        tab = self.tabview.tab("Relocate")
+        ctk.CTkLabel(tab, text="Relocate – move bulky folders safely", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=12)
+        self.selected_label = ctk.CTkLabel(tab, text="No item selected yet.")
+        self.selected_label.pack(pady=6)
+
+        path_frame = ctk.CTkFrame(tab)
+        path_frame.pack(fill="x", padx=12, pady=8)
+        ctk.CTkLabel(path_frame, text="Target root:").pack(side="left", padx=6)
+        self.target_var = tk.StringVar(value="D:/RelocatedCaches")
+        ctk.CTkEntry(path_frame, textvariable=self.target_var, width=340).pack(side="left", padx=6)
+        self.link_type_var = tk.StringVar(value=LinkType.JUNCTION.value)
+        ctk.CTkOptionMenu(path_frame, values=[lt.value for lt in LinkType], variable=self.link_type_var).pack(side="left", padx=6)
+
+        ctk.CTkButton(tab, text="Preview relocation", command=self.preview_relocation).pack(pady=6)
+        ctk.CTkButton(tab, text="Record relocation plan", fg_color="#17803d", command=self.record_relocation_plan).pack(pady=6)
+        self.preview_text = ctk.CTkTextbox(tab, height=360)
+        self.preview_text.pack(fill="both", expand=True, padx=12, pady=8)
+
+    def _build_links_screen(self) -> None:
+        tab = self.tabview.tab("Links")
+        ctk.CTkLabel(tab, text="Managed links", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=12)
+        columns = ("Source", "Target", "Type", "Status", "Validated")
+        self.links_tree = ttk.Treeview(tab, columns=columns, show="headings", height=18)
+        for col, width in zip(columns, [360, 360, 90, 100, 100]):
+            self.links_tree.heading(col, text=col)
+            self.links_tree.column(col, width=width, anchor="w")
+        self.links_tree.pack(fill="both", expand=True, padx=12, pady=8)
+        ctk.CTkButton(tab, text="Validate all links", command=self.validate_links).pack(pady=6)
+
+    def _build_history_screen(self) -> None:
+        tab = self.tabview.tab("History")
+        ctk.CTkLabel(tab, text="History & export", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=12)
+        ctk.CTkButton(tab, text="Refresh history", command=self.refresh_history).pack(pady=6)
+        ctk.CTkButton(tab, text="Export history JSON", command=self.export_history).pack(pady=6)
+        self.history_text = ctk.CTkTextbox(tab, height=420)
+        self.history_text.pack(fill="both", expand=True, padx=12, pady=8)
+
+    def start_scan(self) -> None:
+        self.current_items = scan_storage_map()
+        self.apply_filter(update_status=False)
+        if self.current_items:
+            total_bytes = sum(item.size_bytes for item in self.current_items)
+            self.scan_status.set(
+                f"Loaded {len(self.current_items)} candidate(s) with {total_bytes / (1024 ** 3):.2f} GB total size."
+            )
+        else:
+            self.scan_status.set(
+                "No relocation candidates found in the known paths. Check whether the folders exist on this PC or widen the scanner rules."
+            )
+            self.detail_text.delete("1.0", "end")
+            self.detail_text.insert(
+                "1.0",
+                "The scan button ran successfully, but none of the current known paths matched existing folders that are allowed by the protection rules.",
+            )
+
+    def apply_filter(self, update_status: bool = True) -> None:
+        risk = self.risk_var.get()
+        action = self.action_var.get()
+        normalized_risk = "All" if risk == "All" else risk
+        self.filtered_items = filter_items(self.current_items, risk=normalized_risk, action=action)
+        for row in self.map_tree.get_children():
+            self.map_tree.delete(row)
+        for item in self.filtered_items:
+            self.map_tree.insert(
+                "",
+                "end",
+                values=(
+                    item.display_name,
+                    item.kind.value,
+                    item.size_human,
+                    item.risk_level.value,
+                    item.recommended_action.value,
+                    item.owner_hint or "—",
+                    item.path,
+                ),
+            )
+
+        if update_status and self.current_items and not self.filtered_items:
+            self.scan_status.set("Scan finished, but the current filter hides all candidates. Reset filters to 'All' to see them again.")
+        elif update_status and self.filtered_items:
+            self.scan_status.set(f"Showing {len(self.filtered_items)} of {len(self.current_items)} scanned candidate(s).")
+
+    def _selected_item(self) -> TabulaItem | None:
+        selection = self.map_tree.selection()
+        if not selection:
+            return None
+        index = self.map_tree.index(selection[0])
+        if index >= len(self.filtered_items):
+            return None
+        return self.filtered_items[index]
+
+    def show_detail(self, _event=None) -> None:
+        item = self._selected_item()
+        if not item:
+            return
+        details = (
+            f"Path: {item.path}\n"
+            f"Kind: {item.kind.value}\n"
+            f"Risk: {item.risk_level.value}\n"
+            f"Recommended action: {item.recommended_action.value}\n"
+            f"Size: {item.size_human} ({item.item_count or 0} files)\n"
+            f"Owner: {item.owner_hint or 'Unknown'}\n"
+            f"Detection: {item.source_type}\n"
+            f"Notes: {item.notes or '—'}"
         )
-        messagebox.showerror("Tabula Crash", "Ein GUI-Fehler wurde protokolliert. Siehe Tabula/logs/tabula.log")
+        self.detail_text.delete("1.0", "end")
+        self.detail_text.insert("1.0", details)
 
+    def prepare_relocation(self) -> None:
+        item = self._selected_item()
+        if not item:
+            messagebox.showinfo("Tabula", "Please select an item on the Map tab first.")
+            return
+        self.selected_item = item
+        self.selected_label.configure(text=f"Selected: {item.display_name} ({item.size_human})")
+        self.tabview.set("Relocate")
+        self.preview_relocation()
 
-if __name__ == "__main__":
-    app = TabulaApp()
-    app.mainloop()
+    def preview_relocation(self) -> None:
+        item = getattr(self, "selected_item", None)
+        if not item:
+            self.preview_text.delete("1.0", "end")
+            self.preview_text.insert("1.0", "Select an item from Map first.")
+            return
+        preview = self.relocator.preview(item, self.target_var.get(), LinkType(self.link_type_var.get()))
+        self.preview_text.delete("1.0", "end")
+        self.preview_text.insert("1.0", preview)
+
+    def record_relocation_plan(self) -> None:
+        item = getattr(self, "selected_item", None)
+        if not item:
+            messagebox.showinfo("Tabula", "Select an item from Map first.")
+            return
+        record = self.relocator.plan(item, self.target_var.get(), LinkType(self.link_type_var.get()))
+        self.preview_text.insert("end", f"\n\nRecorded plan: {record.id}")
+        self.refresh_links()
+        self.refresh_history()
+        messagebox.showinfo("Tabula", "Relocation plan recorded in the local ledger.")
+
+    def refresh_links(self) -> None:
+        for row in self.links_tree.get_children():
+            self.links_tree.delete(row)
+        for record in self.link_manager.load_links():
+            self.links_tree.insert(
+                "",
+                "end",
+                values=(record.source_path, record.target_path, record.link_type.value, record.status, "Yes" if record.validated else "No"),
+            )
+
+    def validate_links(self) -> None:
+        self.link_manager.validate_all()
+        self.refresh_links()
+        self.refresh_history()
+        messagebox.showinfo("Tabula", "Link validation complete.")
+
+    def refresh_history(self) -> None:
+        self.history_text.delete("1.0", "end")
+        records = self.engine.ledger.load()
+        if not records:
+            self.history_text.insert("1.0", "No relocation history recorded yet.")
+            return
+        for record in records:
+            self.history_text.insert(
+                "end",
+                f"{record.created_at.isoformat()} | {record.source_path} -> {record.target_path} | {record.link_type.value} | {record.status}\n",
+            )
+
+    def export_history(self) -> None:
+        destination = Path(self.engine.base_dir) / "history_export.json"
+        self.engine.ledger.export_json(destination)
+        messagebox.showinfo("Tabula", f"History exported to {destination}")

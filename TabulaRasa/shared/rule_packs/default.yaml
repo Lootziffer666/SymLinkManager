@@ -1,0 +1,24 @@
+rules:
+  - name: Windows Temp
+    path: "%TEMP%"
+    kind: Temp
+    risk: Low
+    action: Purge
+    review_required: false
+    notes: "Default temp cleanup candidate."
+
+  - name: Local AppData Cache
+    path: "%LOCALAPPDATA%"
+    kind: Cache
+    risk: Medium
+    action: Review
+    review_required: true
+    notes: "Large cache roots need review before deletion."
+
+  - name: Orphaned App Data Review
+    path: "%APPDATA%"
+    kind: OrphanedAppData
+    risk: High
+    action: Review
+    review_required: true
+    notes: "Potential orphaned app data: review manually before purge."
