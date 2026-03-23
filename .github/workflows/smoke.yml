@@ -1,0 +1,35 @@
+name: Tabula Smoke Test
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Syntax & Core Import Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install core dependencies
+        run: |
+          pip install --upgrade pip
+          pip install psutil py7zr Pillow rapidfuzz xxhash python-docx pymupdf
+
+      - name: Run smoke test
+        working-directory: Tabula
+        run: python scripts/smoke_test.py
+        env:
+          # Suppress tkinter-related failures; GUI bootstrap is skipped in headless CI
+          DISPLAY: ""

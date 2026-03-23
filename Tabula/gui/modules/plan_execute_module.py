@@ -7,7 +7,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from core.benchmarks import compare_benchmarks
-from core.models import ActionPlan
+from core.models import ActionPlan, ExecutionTiming
 from core.scanners import benchmark_snapshot
 from gui.module_api import AppContext, BaseModule
 
@@ -22,6 +22,17 @@ class PlanExecuteModule(BaseModule):
 
         self.preview_box = ctk.CTkTextbox(container, height=350, wrap="word")
         self.preview_box.pack(fill="both", expand=True, padx=15, pady=8)
+
+        # Execution timing selector
+        timing_frame = ctk.CTkFrame(container)
+        timing_frame.pack(pady=4)
+        ctk.CTkLabel(timing_frame, text="Ausführungszeitpunkt:").pack(side="left", padx=6)
+        self.timing_var = ctk.StringVar(value=ExecutionTiming.NOW.value)
+        ctk.CTkOptionMenu(
+            timing_frame,
+            values=[t.value for t in ExecutionTiming],
+            variable=self.timing_var,
+        ).pack(side="left", padx=6)
 
         frame = ctk.CTkFrame(container)
         frame.pack(pady=12)
@@ -44,7 +55,14 @@ class PlanExecuteModule(BaseModule):
         self.bench_result = ctk.CTkTextbox(container, height=120)
         self.bench_result.pack(fill="x", padx=15, pady=5)
 
+    def _apply_timing_to_plan(self) -> None:
+        """Apply the currently selected execution timing to all plan actions."""
+        timing = self.timing_var.get()
+        for action in self.context.planner.plan:
+            action.execution_timing = timing
+
     def update_preview(self) -> None:
+        self._apply_timing_to_plan()
         self.preview_box.delete("1.0", "end")
         self.preview_box.insert("1.0", self.context.planner.preview())
 
@@ -52,8 +70,24 @@ class PlanExecuteModule(BaseModule):
         if not self.context.planner.plan:
             messagebox.showwarning("Plan leer", "Füge zuerst Aktionen hinzu")
             return
-        if not dry_run and not messagebox.askyesno("Warnung", "Wirklich ausführen?"):
-            return
+
+        self._apply_timing_to_plan()
+
+        if not dry_run:
+            high_risk = self.context.planner.high_risk_count()
+            # First confirmation
+            if not messagebox.askyesno("Warnung", "Wirklich ausführen?"):
+                return
+            # Second confirmation required for any High/Critical risk actions
+            if high_risk > 0:
+                if not messagebox.askyesno(
+                    "⚠️ HIGH RISK – Zweite Bestätigung erforderlich",
+                    f"{high_risk} Aktion(en) haben Risikostufe HIGH oder CRITICAL.\n\n"
+                    "Diese Aktionen können nicht einfach rückgängig gemacht werden.\n\n"
+                    "Wirklich fortfahren?",
+                ):
+                    return
+
         results = self.context.planner.execute(dry_run=dry_run)
         self.preview_box.insert("end", "\n\n=== ERGEBNIS ===\n" + "\n".join(results))
         self.preview_box.see("end")

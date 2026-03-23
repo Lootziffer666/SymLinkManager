@@ -165,6 +165,32 @@ def normalize_name(name: str) -> str:
     return " ".join(clean.lower().split())
 
 
+def match_import_list(programs: list[ProgramEntry], import_lines: list[str]) -> dict[str, str]:
+    """Match a list of raw program name strings against installed programs.
+
+    Returns a mapping from each import line → matched program id (or empty string).
+    Matching is tolerant against bitness and version suffixes.
+    """
+    normalized_import = [(line, normalize_name(line)) for line in import_lines if line.strip()]
+    prog_index = {normalize_name(p.raw_display_name): p.id for p in programs}
+
+    result: dict[str, str] = {}
+    for raw_line, norm_line in normalized_import:
+        if not norm_line:
+            continue
+        # Exact match first
+        if norm_line in prog_index:
+            result[raw_line] = prog_index[norm_line]
+            continue
+        # Substring match
+        matched_id = ""
+        for prog_norm, prog_id in prog_index.items():
+            if norm_line in prog_norm or prog_norm in norm_line:
+                matched_id = prog_id
+                break
+        result[raw_line] = matched_id
+    return result
+
 def _safe_query_value(key, value_name: str, default: str = "") -> str:
     try:
         return str(winreg.QueryValueEx(key, value_name)[0]).strip()
@@ -512,7 +538,6 @@ def _is_installer_exe(filename: str) -> bool:
 def _classify_archive(path: Path) -> str:
     """Return a human-readable status/classification."""
     ext = path.suffix.lower()
-    name_lower = path.name.lower()
     if ext in _ARCHIVE_EXTENSIONS:
         return "Archive"
     if ext == ".iso":
@@ -528,14 +553,68 @@ def _classify_archive(path: Path) -> str:
     return "Unknown"
 
 
-def scan_archives(folder_path: str) -> list[ArchiveItem]:
-    """Walk a folder and classify archive / installer files."""
+def _check_zip_password(archive_path: Path) -> bool:
+    """Return True if the ZIP archive appears to be password-protected."""
+    try:
+        import zipfile
+        with zipfile.ZipFile(archive_path) as zf:
+            for info in zf.infolist():
+                if info.flag_bits & 0x1:
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+def _try_password_list(archive_path: Path, passwords: list[str]) -> bool:
+    """Try each password against a ZIP archive.
+
+    Returns True if any password from the list successfully opens the archive.
+    The matching password is never returned, logged, or stored.
+    """
+    try:
+        import zipfile
+        with zipfile.ZipFile(archive_path) as zf:
+            names = zf.namelist()
+            if not names:
+                return False
+            test_name = names[0]
+            for pwd in passwords:
+                try:
+                    zf.read(test_name, pwd=pwd.encode("utf-8"))
+                    return True
+                except (RuntimeError, zipfile.BadZipFile):
+                    continue
+    except Exception:
+        pass
+    return False
+
+
+def scan_archives(folder_path: str, password_list: list[str] | None = None) -> list[ArchiveItem]:
+    """Walk a folder and classify archive / installer files.
+
+    Args:
+        folder_path: Directory to scan.
+        password_list: Optional list of passwords to test against encrypted ZIPs.
+            Passwords are tested in-memory only and never logged.
+    """
     folder = Path(folder_path)
     if not folder.exists():
         return []
 
     all_extensions = _ARCHIVE_EXTENSIONS | _INSTALLER_EXTENSIONS
     items: list[ArchiveItem] = []
+
+    # Cache installed program names once to avoid repeated registry scans
+    installed_names: list[str] = []
+    if winreg is not None:
+        try:
+            installed_names = [
+                normalize_name(prog.raw_display_name).replace(" ", "")
+                for prog in scan_installed_programs()[:200]
+            ]
+        except Exception:
+            installed_names = []
 
     for file in sorted(folder.rglob("*")):
         if not file.is_file():
@@ -550,14 +629,23 @@ def scan_archives(folder_path: str) -> list[ArchiveItem]:
         file_type = _classify_archive(file)
         size_mb = size_bytes / (1024 * 1024)
 
-        # Very lightweight overlap check: name-based heuristic only
-        overlap = False
-        if winreg is not None:
-            name_clean = re.sub(r"[_\-\s]", "", file.stem.lower())
-            overlap = any(
-                name_clean in normalize_name(prog.raw_display_name).replace(" ", "")
-                for prog in scan_installed_programs()[:200]
-            ) if name_clean else False
+        # Name-based overlap check against installed programs
+        name_clean = re.sub(r"[_\-\s]", "", file.stem.lower())
+        overlap = bool(name_clean) and any(name_clean in prog_name for prog_name in installed_names)
+
+        # Password detection for ZIP files
+        password_protected = False
+        notes = ""
+        if file.suffix.lower() == ".zip":
+            password_protected = _check_zip_password(file)
+            if password_protected and password_list:
+                matched = _try_password_list(file, password_list)
+                if matched:
+                    notes = "Password matched from list."
+                else:
+                    notes = "Password-protected — no match in provided list."
+            elif password_protected:
+                notes = "Password-protected."
 
         items.append(
             ArchiveItem(
@@ -566,6 +654,8 @@ def scan_archives(folder_path: str) -> list[ArchiveItem]:
                 size_mb=round(size_mb, 2),
                 status=file_type,
                 overlap_installed=overlap,
+                password_protected=password_protected,
+                notes=notes,
             )
         )
 

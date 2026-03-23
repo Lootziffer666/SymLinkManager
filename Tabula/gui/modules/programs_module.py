@@ -10,7 +10,7 @@ from tkinter import StringVar, filedialog, messagebox, ttk
 import customtkinter as ctk
 
 from core.models import ActionPlan
-from core.scanners import filter_programs, scan_installed_programs
+from core.scanners import filter_programs, match_import_list, scan_installed_programs
 from gui.module_api import AppContext, BaseModule
 
 _RISK_COLORS = {
@@ -26,6 +26,7 @@ class ProgramsModule(BaseModule):
 
     def build(self, container, app, context: AppContext) -> None:
         self._all_programs: list = []
+        self._import_matches: dict[str, str] = {}
         self._context = context
 
         ctk.CTkLabel(container, text="Installierte Win32-Programme", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=6)
@@ -47,6 +48,9 @@ class ProgramsModule(BaseModule):
         ctk.CTkCheckBox(filter_frame, text="Treiber ausbl.", variable=self.hide_drv_var, command=self._apply_filter).pack(side="left", padx=4)
         self.large_only_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(filter_frame, text=">500 MB", variable=self.large_only_var, command=self._apply_filter).pack(side="left", padx=4)
+        self.show_import_only_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(filter_frame, text="Nur Import-Matches", variable=self.show_import_only_var,
+                        command=self._apply_filter).pack(side="left", padx=4)
 
         self.count_label = ctk.CTkLabel(filter_frame, text="0 Programme")
         self.count_label.pack(side="right", padx=8)
@@ -57,11 +61,11 @@ class ProgramsModule(BaseModule):
 
         self.prog_tree = ttk.Treeview(
             tree_frame,
-            columns=("Name", "Größe", "Kategorie", "Risiko", "Publisher"),
+            columns=("Name", "Größe", "Kategorie", "Risiko", "Publisher", "Import"),
             show="headings",
             height=16,
         )
-        for col, width in [("Name", 320), ("Größe", 90), ("Kategorie", 120), ("Risiko", 90), ("Publisher", 260)]:
+        for col, width in [("Name", 300), ("Größe", 90), ("Kategorie", 120), ("Risiko", 90), ("Publisher", 240), ("Import", 80)]:
             self.prog_tree.heading(col, text=col, command=lambda c=col: self._sort_by(c))
             self.prog_tree.column(col, width=width, anchor="w")
 
@@ -73,6 +77,7 @@ class ProgramsModule(BaseModule):
         self.prog_tree.tag_configure("risk_high", foreground="#e74c3c")
         self.prog_tree.tag_configure("risk_medium", foreground="#f39c12")
         self.prog_tree.tag_configure("risk_low", foreground="#2ecc71")
+        self.prog_tree.tag_configure("import_match", background="#1a3a1a")
         self.prog_tree.bind("<<TreeviewSelect>>", self._show_detail)
 
         # --- Detail panel ---
@@ -86,6 +91,7 @@ class ProgramsModule(BaseModule):
         self.scan_btn.pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="Ausgewählte in Plan", fg_color="orange", command=self._add_selected).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="Uninstall-Skript", fg_color="#8e44ad", command=self._generate_script).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Importliste laden", fg_color="#2980b9", command=self._load_import_list).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="CSV exportieren", command=self._export_csv).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="JSON exportieren", command=self._export_json).pack(side="left", padx=5)
 
@@ -109,6 +115,30 @@ class ProgramsModule(BaseModule):
         self.scan_btn.configure(state="normal")
         self._apply_filter()
 
+    def _load_import_list(self) -> None:
+        """Load a user-provided text file of program names and match against installed programs."""
+        src = filedialog.askopenfilename(
+            title="Importliste laden (eine Zeile = ein Programmname)",
+            filetypes=[("Textdateien", "*.txt"), ("Alle Dateien", "*.*")],
+        )
+        if not src:
+            return
+        if not self._all_programs:
+            messagebox.showwarning("Import", "Bitte zuerst Programme scannen.")
+            return
+        try:
+            lines = [line.strip() for line in Path(src).read_text(encoding="utf-8").splitlines() if line.strip()]
+        except Exception as exc:
+            messagebox.showerror("Import", f"Datei nicht lesbar: {exc}")
+            return
+        self._import_matches = match_import_list(self._all_programs, lines)
+        matched = sum(1 for v in self._import_matches.values() if v)
+        self._apply_filter()
+        messagebox.showinfo(
+            "Import",
+            f"{len(lines)} Einträge geladen • {matched} Treffer von {len(self._all_programs)} installierten Programmen",
+        )
+
     def _apply_filter(self) -> None:
         filtered = filter_programs(
             self._all_programs,
@@ -118,10 +148,17 @@ class ProgramsModule(BaseModule):
             hide_drivers=self.hide_drv_var.get(),
             large_only=self.large_only_var.get(),
         )
+        # Import-only filter
+        if self.show_import_only_var.get() and self._import_matches:
+            matched_ids = set(self._import_matches.values()) - {""}
+            filtered = [p for p in filtered if p.id in matched_ids]
+
         for item in self.prog_tree.get_children():
             self.prog_tree.delete(item)
         for prog in filtered[:2000]:
             risk_tag = f"risk_{prog.risk_level.value.lower()}"
+            is_import_match = bool(self._import_matches) and prog.id in set(self._import_matches.values()) - {""}
+            tags = (risk_tag, "import_match") if is_import_match else (risk_tag,)
             self.prog_tree.insert(
                 "",
                 "end",
@@ -131,8 +168,9 @@ class ProgramsModule(BaseModule):
                     prog.category.value,
                     prog.risk_level.value,
                     prog.publisher[:55],
+                    "✓" if is_import_match else "",
                 ),
-                tags=(risk_tag,),
+                tags=tags,
                 iid=prog.id,
             )
         self.count_label.configure(text=f"{len(filtered)} Programme")
@@ -146,6 +184,7 @@ class ProgramsModule(BaseModule):
             "Kategorie": lambda p: p.category.value,
             "Risiko": lambda p: p.risk_level.value,
             "Publisher": lambda p: p.publisher.lower(),
+            "Import": lambda p: p.id in set(self._import_matches.values()) - {""},
         }
         key_fn = key_map.get(col, lambda p: "")
         self._all_programs.sort(key=key_fn, reverse=reverse)
@@ -159,6 +198,11 @@ class ProgramsModule(BaseModule):
         prog = next((p for p in self._all_programs if p.id == prog_id), None)
         if not prog:
             return
+        import_note = ""
+        if self._import_matches:
+            matched_line = next((k for k, v in self._import_matches.items() if v == prog.id), None)
+            if matched_line:
+                import_note = f"\nImport-Match: \"{matched_line}\""
         detail = (
             f"Name: {prog.raw_display_name}\n"
             f"Version: {prog.display_version}  |  Publisher: {prog.publisher}\n"
@@ -169,6 +213,7 @@ class ProgramsModule(BaseModule):
             f"Lizenz: {prog.legal_status.value}"
             + (f"  →  {prog.legal_alternative_hint}" if prog.legal_alternative_hint else "")
             + ("\n" + f"Alternativen: {', '.join(prog.legal_alternative_candidates)}" if prog.legal_alternative_candidates else "")
+            + import_note
         )
         self.detail_box.delete("1.0", "end")
         self.detail_box.insert("1.0", detail)

@@ -110,6 +110,12 @@ class ActionStatus(str, Enum):
     FAILED = "Failed"
 
 
+class ExecutionTiming(str, Enum):
+    NOW = "Now"
+    AFTER_RELOGIN = "AfterRelogin"
+    AFTER_RESTART = "AfterRestart"
+
+
 @dataclass(slots=True)
 class ProgramEntry(SerializableDataclass):
     id: str
@@ -204,6 +210,7 @@ class ActionPlan:
     risk: str = "Medium"
     requires_reboot: bool = False
     dry_run_preview: str = ""
+    execution_timing: str = ExecutionTiming.NOW.value  # "Now", "AfterRelogin", "AfterRestart"
 
     def model_dump(self) -> dict:
         return {
@@ -214,6 +221,7 @@ class ActionPlan:
             "risk": self.risk,
             "requires_reboot": self.requires_reboot,
             "dry_run_preview": self.dry_run_preview,
+            "execution_timing": self.execution_timing,
         }
 
 
