@@ -193,6 +193,85 @@ class ActionRecord(SerializableDataclass):
     notes: str = ""
 
 
+@dataclass
+class ActionPlan:
+    """A single planned action that can be previewed, executed, or undone."""
+
+    action_type: str  # "delete", "uninstall", "powershell", "reg", "service", "task", "keep_merged"
+    target: str  # command or path to act on
+    description: str = ""
+    impact_mb: float = 0.0
+    risk: str = "Medium"
+    requires_reboot: bool = False
+    dry_run_preview: str = ""
+
+    def model_dump(self) -> dict:
+        return {
+            "action_type": self.action_type,
+            "target": self.target,
+            "description": self.description,
+            "impact_mb": self.impact_mb,
+            "risk": self.risk,
+            "requires_reboot": self.requires_reboot,
+            "dry_run_preview": self.dry_run_preview,
+        }
+
+
+@dataclass
+class UWPEntry:
+    """An installed UWP / AppX package."""
+
+    name: str
+    package_fullname: str
+    is_ai_related: bool = False
+    publisher: str = ""
+    install_location: str = ""
+    version: str = ""
+
+
+@dataclass
+class TaskEntry:
+    """A Windows Scheduled Task."""
+
+    name: str
+    path: str
+    enabled: bool = True
+    is_critical: bool = False
+    last_run: str = ""
+    next_run: str = ""
+    status: str = "Unknown"
+    description: str = ""
+    run_as: str = ""
+    trigger_summary: str = ""
+
+
+@dataclass
+class ArchiveItem:
+    """A local archive or installer file."""
+
+    path: str
+    file_type: str
+    size_mb: float = 0.0
+    status: str = "unknown"
+    overlap_installed: bool = False
+    password_protected: bool = False
+    notes: str = ""
+
+
+@dataclass
+class AutorunEntry:
+    """A Windows autorun / autostart registry entry."""
+
+    name: str
+    location: str  # registry key or folder path
+    entry_type: str  # "Registry", "StartupFolder"
+    command: str = ""
+    enabled: bool = True
+    is_suspicious: bool = False
+    risk: str = "Low"
+    notes: str = ""
+
+
 def _serialize_value(value):
     if isinstance(value, dict):
         return {key: _serialize_value(item) for key, item in value.items()}

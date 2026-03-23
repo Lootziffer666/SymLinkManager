@@ -1,10 +1,13 @@
-# Configuration for Windows System
+# Configuration for Tabula
 
-# System Paths
+import os
+from pathlib import Path
+
+# System Paths — resolved dynamically so they work on any Windows user account
 system_paths = {
-    'documents': 'C:\Users\User\Documents',
-    'downloads': 'C:\Users\User\Downloads',
-    'desktop': 'C:\Users\User\Desktop'
+    "documents": str(Path(os.path.expandvars(r"%USERPROFILE%\Documents"))),
+    "downloads": str(Path(os.path.expandvars(r"%USERPROFILE%\Downloads"))),
+    "desktop": str(Path(os.path.expandvars(r"%USERPROFILE%\Desktop"))),
 }
 
 # Risk Categories
@@ -28,6 +31,6 @@ thresholds = {
 
 # Storage Location Patterns
 storage_location_patterns = {
-    'local': 'C:\Storage\Local',
-    'backup': 'D:\Storage\Backup'
+    "local": str(Path(os.path.expandvars(r"%USERPROFILE%\Storage\Local"))),
+    "backup": str(Path(os.path.expandvars(r"%USERPROFILE%\Storage\Backup"))),
 }

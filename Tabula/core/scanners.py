@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
 from .models import (
+    ArchiveItem,
+    AutorunEntry,
     LegalStatus,
     ProgramCategory,
     ProgramEntry,
@@ -15,6 +18,8 @@ from .models import (
     RiskLevel,
     StorageItem,
     StorageKind,
+    TaskEntry,
+    UWPEntry,
 )
 from .path_utils import expand_windows_path, folder_size, format_bytes, is_protected
 
@@ -394,3 +399,335 @@ def relocation_candidates(items: list[StorageItem]) -> list[StorageItem]:
         and item.movable_bytes > 0
         and item.kind not in {StorageKind.SAVE_DATA, StorageKind.INSTALL_DATA}
     ]
+
+
+# ---------------------------------------------------------------------------
+# Scheduled Tasks Scanner
+# ---------------------------------------------------------------------------
+
+_TASK_CRITICAL_PATTERNS = [
+    "windows update", "defender", "antimalware", "security", "autochk",
+    "system restore", "registry backup", "windows backup", "disk diagnostic",
+    "uefi", "bios", "bitlocker", "shadow copy",
+]
+
+_TASK_WHITELIST_PATTERNS = [
+    "adobe", "ccleaner", "steam", "epic", "origin", "uplay", "ubisoft",
+    "google update", "chrome update", "firefox update", "java update",
+    "nvidia", "amd", "realtek", "malwarebytes", "recuva", "teamviewer",
+    "dropbox", "onedrive sync", "zoom", "discord",
+]
+
+
+def _is_task_critical(name: str, path: str) -> bool:
+    combined = (name + " " + path).lower()
+    return any(pattern in combined for pattern in _TASK_CRITICAL_PATTERNS)
+
+
+def scan_scheduled_tasks() -> list[TaskEntry]:
+    """Scan Windows scheduled tasks using schtasks.exe. Falls back to empty list on non-Windows."""
+    tasks: list[TaskEntry] = []
+    try:
+        result = subprocess.run(
+            ["schtasks", "/query", "/fo", "CSV", "/v"],
+            capture_output=True, text=True, timeout=30, errors="replace",
+        )
+        if result.returncode != 0:
+            return tasks
+
+        lines = result.stdout.splitlines()
+        if not lines:
+            return tasks
+
+        headers: list[str] = []
+        for line in lines:
+            row = [c.strip('"') for c in line.split('","')]
+            if not headers:
+                if "TaskName" in line or "Aufgabenname" in line:
+                    headers = row
+                continue
+            if len(row) < 2 or not row[0]:
+                continue
+            row_map: dict[str, str] = dict(zip(headers, row))
+
+            name = row_map.get("Task To Run", row_map.get("Aufgabe", "")).strip()
+            task_name_col = row_map.get("TaskName", row_map.get("Aufgabenname", "")).strip()
+            if not task_name_col:
+                continue
+
+            # Use the last path segment as the display name
+            display = task_name_col.split("\\")[-1] or task_name_col
+            enabled_raw = row_map.get("Scheduled Task State", row_map.get("Status der geplanten Aufgabe", "Enabled")).lower()
+            enabled = "enabled" in enabled_raw or "aktiviert" in enabled_raw
+            status = row_map.get("Status", "Unknown")
+            last_run = row_map.get("Last Run Time", row_map.get("Letzte Ausführungszeit", ""))
+            next_run = row_map.get("Next Run Time", row_map.get("Nächste Ausführungszeit", ""))
+            run_as = row_map.get("Run As User", row_map.get("Ausführen als Benutzer", ""))
+            description = row_map.get("Comment", row_map.get("Kommentar", ""))
+
+            tasks.append(
+                TaskEntry(
+                    name=display,
+                    path=task_name_col,
+                    enabled=enabled,
+                    is_critical=_is_task_critical(display, task_name_col),
+                    last_run=last_run,
+                    next_run=next_run,
+                    status=status,
+                    description=description[:120],
+                    run_as=run_as,
+                )
+            )
+    except Exception:
+        pass
+
+    # De-duplicate by path
+    seen: set[str] = set()
+    unique: list[TaskEntry] = []
+    for task in tasks:
+        if task.path not in seen:
+            seen.add(task.path)
+            unique.append(task)
+    return unique
+
+
+# ---------------------------------------------------------------------------
+# Archive / Installer Scanner
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".gz", ".tar", ".bz2", ".xz", ".zst"}
+_INSTALLER_EXTENSIONS = {".msi", ".exe", ".cab", ".iso", ".appx", ".msix"}
+
+_KNOWN_INSTALLER_PATTERNS = [
+    "setup", "install", "installer", "update", "upgrade", "patch",
+    "vcredist", "dotnet", "directx", "_x64", "_x86",
+]
+
+
+def _is_installer_exe(filename: str) -> bool:
+    lower = filename.lower()
+    return any(pattern in lower for pattern in _KNOWN_INSTALLER_PATTERNS)
+
+
+def _classify_archive(path: Path) -> str:
+    """Return a human-readable status/classification."""
+    ext = path.suffix.lower()
+    name_lower = path.name.lower()
+    if ext in _ARCHIVE_EXTENSIONS:
+        return "Archive"
+    if ext == ".iso":
+        return "Disk Image"
+    if ext in {".appx", ".msix"}:
+        return "UWP Package"
+    if ext == ".msi":
+        return "MSI Installer"
+    if ext == ".exe" and _is_installer_exe(path.name):
+        return "EXE Installer"
+    if ext == ".exe":
+        return "Executable"
+    return "Unknown"
+
+
+def scan_archives(folder_path: str) -> list[ArchiveItem]:
+    """Walk a folder and classify archive / installer files."""
+    folder = Path(folder_path)
+    if not folder.exists():
+        return []
+
+    all_extensions = _ARCHIVE_EXTENSIONS | _INSTALLER_EXTENSIONS
+    items: list[ArchiveItem] = []
+
+    for file in sorted(folder.rglob("*")):
+        if not file.is_file():
+            continue
+        if file.suffix.lower() not in all_extensions:
+            continue
+        try:
+            size_bytes = file.stat().st_size
+        except OSError:
+            continue
+
+        file_type = _classify_archive(file)
+        size_mb = size_bytes / (1024 * 1024)
+
+        # Very lightweight overlap check: name-based heuristic only
+        overlap = False
+        if winreg is not None:
+            name_clean = re.sub(r"[_\-\s]", "", file.stem.lower())
+            overlap = any(
+                name_clean in normalize_name(prog.raw_display_name).replace(" ", "")
+                for prog in scan_installed_programs()[:200]
+            ) if name_clean else False
+
+        items.append(
+            ArchiveItem(
+                path=str(file),
+                file_type=file_type,
+                size_mb=round(size_mb, 2),
+                status=file_type,
+                overlap_installed=overlap,
+            )
+        )
+
+    return sorted(items, key=lambda a: a.size_mb, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# UWP / AppX Scanner
+# ---------------------------------------------------------------------------
+
+_AI_PACKAGE_KEYWORDS = [
+    "recall", "copilot", "windowsai", "aicomponent", "cortana",
+    "bing", "clipchamp", "onedrive", "xbox", "yourphone", "gethelp",
+]
+
+
+def scan_uwp_apps() -> list[UWPEntry]:
+    """List installed UWP / AppX packages. Returns empty list on non-Windows."""
+    apps: list[UWPEntry] = []
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-AppxPackage | Select-Object Name,PackageFullName,PublisherDisplayName,InstallLocation,Version | ConvertTo-Csv -NoTypeInformation"],
+            capture_output=True, text=True, timeout=30, errors="replace",
+        )
+        if result.returncode != 0:
+            return apps
+
+        lines = result.stdout.strip().splitlines()
+        if len(lines) < 2:
+            return apps
+
+        headers = [h.strip('"') for h in lines[0].split(",")]
+        for line in lines[1:]:
+            parts = [p.strip('"') for p in line.split(",")]
+            row = dict(zip(headers, parts))
+            name = row.get("Name", "").strip()
+            fullname = row.get("PackageFullName", "").strip()
+            if not name or not fullname:
+                continue
+            publisher = row.get("PublisherDisplayName", "").strip()
+            location = row.get("InstallLocation", "").strip()
+            version = row.get("Version", "").strip()
+            is_ai = any(kw in name.lower() for kw in _AI_PACKAGE_KEYWORDS)
+            apps.append(
+                UWPEntry(
+                    name=name,
+                    package_fullname=fullname,
+                    is_ai_related=is_ai,
+                    publisher=publisher,
+                    install_location=location,
+                    version=version,
+                )
+            )
+    except Exception:
+        pass
+    return apps
+
+
+# ---------------------------------------------------------------------------
+# Autorun / Registry Scanner
+# ---------------------------------------------------------------------------
+
+_AUTORUN_KEYS = [
+    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+    r"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",
+    r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run",
+    r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon",
+]
+
+_AUTORUN_SUSPICIOUS_PATTERNS = [
+    "temp\\", "appdata\\local\\temp", "%temp%", "cmd.exe /c",
+    "powershell -enc", "regsvr32", "rundll32", "mshta",
+]
+
+
+def scan_autoruns() -> list[AutorunEntry]:
+    """Scan common Windows autorun registry locations."""
+    entries: list[AutorunEntry] = []
+    if winreg is None:
+        return entries
+
+    hive_map = {
+        "HKLM": winreg.HKEY_LOCAL_MACHINE,
+        "HKCU": winreg.HKEY_CURRENT_USER,
+    }
+
+    for hive_name, hive in hive_map.items():
+        for subkey in _AUTORUN_KEYS:
+            try:
+                key = winreg.OpenKey(hive, subkey)
+            except OSError:
+                continue
+            count = winreg.QueryInfoKey(key)[1]
+            for i in range(count):
+                try:
+                    value_name, data, _ = winreg.EnumValue(key, i)
+                    command = str(data)
+                    is_suspicious = any(p in command.lower() for p in _AUTORUN_SUSPICIOUS_PATTERNS)
+                    entries.append(
+                        AutorunEntry(
+                            name=value_name,
+                            location=f"{hive_name}\\{subkey}",
+                            entry_type="Registry",
+                            command=command,
+                            enabled=True,
+                            is_suspicious=is_suspicious,
+                            risk="High" if is_suspicious else "Low",
+                            notes="Suspicious autorun detected." if is_suspicious else "",
+                        )
+                    )
+                except OSError:
+                    continue
+
+    # Also scan startup folders
+    for startup_path in [
+        Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup",
+        Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "StartUp",
+    ]:
+        if startup_path.exists():
+            for file in startup_path.iterdir():
+                if file.is_file():
+                    entries.append(
+                        AutorunEntry(
+                            name=file.name,
+                            location=str(startup_path),
+                            entry_type="StartupFolder",
+                            command=str(file),
+                            enabled=True,
+                            is_suspicious=False,
+                            risk="Low",
+                        )
+                    )
+
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# Benchmark snapshot
+# ---------------------------------------------------------------------------
+
+def benchmark_snapshot() -> dict:
+    """Take a lightweight system resource snapshot."""
+    try:
+        import psutil
+        ram = psutil.virtual_memory()
+        cpu = psutil.cpu_percent(interval=0.5)
+        disk = psutil.disk_usage("/")
+        return {
+            "timestamp": __import__("datetime").datetime.now().isoformat(),
+            "ram_percent": ram.percent,
+            "ram_total_gb": round(ram.total / (1024 ** 3), 2),
+            "ram_used_gb": round(ram.used / (1024 ** 3), 2),
+            "cpu_percent": cpu,
+            "disk_total_gb": round(disk.total / (1024 ** 3), 2),
+            "disk_used_gb": round(disk.used / (1024 ** 3), 2),
+            "disk_free_gb": round(disk.free / (1024 ** 3), 2),
+        }
+    except ImportError:
+        return {
+            "timestamp": __import__("datetime").datetime.now().isoformat(),
+            "ram_percent": 0.0,
+            "cpu_percent": 0.0,
+            "disk_free_gb": 0.0,
+        }
