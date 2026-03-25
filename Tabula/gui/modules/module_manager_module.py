@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from tkinter import messagebox
 
 import customtkinter as ctk
 
 from gui.module_api import AppContext, BaseModule
+
+_APP_ROOT = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[2]
 
 
 class ModuleManagerModule(BaseModule):
@@ -48,6 +51,6 @@ class ModuleManagerModule(BaseModule):
     def save(self) -> None:
         for module_id, var in self.vars.items():
             self.app.module_config[module_id] = bool(var.get())
-        config_path = Path(__file__).resolve().parents[2] / "modules.json"
+        config_path = _APP_ROOT / "modules.json"
         config_path.write_text(json.dumps(self.app.module_config, indent=2, ensure_ascii=False), encoding="utf-8")
         messagebox.showinfo("Module", "Gespeichert. Bitte Tabula neu starten, um Tabs neu zu laden.")

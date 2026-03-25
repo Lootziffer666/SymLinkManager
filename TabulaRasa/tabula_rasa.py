@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 # Ensure TabulaRasa root is in the module search path when launched directly
-_ROOT = Path(__file__).resolve().parent
+_ROOT = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 

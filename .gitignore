@@ -8,6 +8,11 @@ ShellGuard_Backups/
 *.xml
 *.json.bak
 
+# Build artifacts
+build/
+dist/
+*.spec
+
 # Windows
 Thumbs.db
 Desktop.ini

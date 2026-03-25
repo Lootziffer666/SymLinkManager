@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
 from gui.module_api import AppContext, BaseModule
+
+_APP_ROOT = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[2]
 
 
 class MicroAppsModule(BaseModule):
@@ -28,7 +31,7 @@ class MicroAppsModule(BaseModule):
     def load_catalog(self) -> None:
         for item in self.tree.get_children():
             self.tree.delete(item)
-        catalog_path = Path(__file__).resolve().parents[2] / "micro_apps" / "catalog.json"
+        catalog_path = _APP_ROOT / "micro_apps" / "catalog.json"
         data = json.loads(catalog_path.read_text(encoding="utf-8"))
         for app in data.get("apps", []):
             self.tree.insert(

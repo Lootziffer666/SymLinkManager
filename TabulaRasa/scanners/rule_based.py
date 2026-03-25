@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
@@ -7,9 +8,11 @@ import yaml
 from shared.core.models import PurgeItem, PurgeKind, RecommendedAction, RiskLevel
 from shared.core.path_utils import expand_windows_path, folder_size, format_bytes, is_protected
 
+_APP_ROOT = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
+
 
 def load_rule_packs() -> list[PurgeItem]:
-    rule_file = Path(__file__).resolve().parents[1] / "shared" / "rule_packs" / "default.yaml"
+    rule_file = _APP_ROOT / "shared" / "rule_packs" / "default.yaml"
     if not rule_file.exists():
         return []
     with rule_file.open(encoding="utf-8") as handle:

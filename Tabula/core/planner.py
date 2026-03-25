@@ -4,6 +4,7 @@ import datetime as _dt
 import json
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import List
 
@@ -13,7 +14,7 @@ from .models import ActionPlan, ExecutionTiming
 # Load system-critical blocklist from rules/
 # ---------------------------------------------------------------------------
 
-_RULES_DIR = Path(__file__).resolve().parents[2] / "rules"
+_RULES_DIR = (Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[2]) / "rules"
 
 
 def _load_rules_lines(filename: str) -> list[str]:

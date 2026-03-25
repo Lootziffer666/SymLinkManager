@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import ollama
+
+_APP_ROOT = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
 
 PROMPT_TEMPLATE = """
 Du bist Tabula AI Companion. Arbeite konservativ und sicher.
@@ -70,7 +73,7 @@ def generate_plan(export_data: dict, profile: dict, modules_cfg: dict, model: st
 def main() -> None:
     export_path = Path(input("Pfad zu Tabula-Export JSON: ").strip())
     modules_path_raw = input("Pfad zu modules.json (leer = ../modules.json): ").strip()
-    modules_path = Path(modules_path_raw) if modules_path_raw else (Path(__file__).resolve().parents[1] / "modules.json")
+    modules_path = Path(modules_path_raw) if modules_path_raw else (_APP_ROOT / "modules.json")
 
     export_data = load_json(export_path)
     modules_cfg = load_json(modules_path)
