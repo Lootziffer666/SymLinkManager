@@ -123,8 +123,9 @@ def build_tabula(*, onefile: bool = False) -> Path:
     ]
     _run(cmd, "Building Tabula")
 
+    exe_suffix = ".exe" if sys.platform == "win32" else ""
     if onefile:
-        return DIST_DIR / "Tabula.exe"
+        return DIST_DIR / f"Tabula{exe_suffix}"
     return DIST_DIR / "Tabula"
 
 
@@ -170,8 +171,9 @@ def build_tabula_rasa(*, onefile: bool = False) -> Path:
     ]
     _run(cmd, "Building TabulaRasa")
 
+    exe_suffix = ".exe" if sys.platform == "win32" else ""
     if onefile:
-        return DIST_DIR / "TabulaRasa.exe"
+        return DIST_DIR / f"TabulaRasa{exe_suffix}"
     return DIST_DIR / "TabulaRasa"
 
 
@@ -201,8 +203,9 @@ def main() -> int:
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
-        print("PyInstaller not found. Installing …")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller>=6.0"])
+        print("❌ PyInstaller not found. Install it first:")
+        print("   pip install -r Tabula/requirements/build.txt")
+        return 1
 
     results: list[str] = []
 
