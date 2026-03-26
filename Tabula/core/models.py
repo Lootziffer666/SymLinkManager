@@ -143,6 +143,8 @@ class ProgramEntry(SerializableDataclass):
     legal_alternative_candidates: list[str] = field(default_factory=list)
     duplicate_count: int = 0
     duplicate_sources: list[str] = field(default_factory=list)
+    installed_at: str = ""
+    last_used_at: str = ""
 
 
 @dataclass(slots=True)

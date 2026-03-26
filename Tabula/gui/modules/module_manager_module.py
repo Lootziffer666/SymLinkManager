@@ -9,7 +9,7 @@ import customtkinter as ctk
 
 from gui.module_api import AppContext, BaseModule
 
-_APP_ROOT = Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[2]
+_APP_ROOT = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[2]
 
 
 class ModuleManagerModule(BaseModule):

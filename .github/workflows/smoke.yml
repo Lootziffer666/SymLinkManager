@@ -34,3 +34,4 @@ jobs:
         env:
           # Suppress tkinter-related failures; GUI bootstrap is skipped in headless CI
           DISPLAY: ""
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
