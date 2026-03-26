@@ -191,6 +191,107 @@ def match_import_list(programs: list[ProgramEntry], import_lines: list[str]) -> 
         result[raw_line] = matched_id
     return result
 
+_INSTALLER_EXTENSIONS = {".exe", ".msi", ".zip", ".7z", ".rar", ".iso", ".cab"}
+
+# Minimum number of characters a normalised name must have before fuzzy-matching
+# is attempted.  Short tokens like "ai" or "vr" would cause too many false positives.
+_MIN_MATCH_LENGTH = 5
+
+
+def _names_match(a: str, b: str) -> bool:
+    """Return True when *a* and *b* are considered the same program name.
+
+    Rules (applied in order, most-specific first):
+    1. Exact equality after normalisation.
+    2. One is a *word-prefix* of the other (i.e. the shorter string appears at the
+       start of the longer string and is followed by a space or end-of-string).
+       Prevents "game" matching "gameLauncher" but allows "vlc media" matching
+       "vlc media player".
+    3. The shorter normalised token appears as a *full word sequence* inside the
+       longer one (token split by spaces).
+    """
+    if a == b:
+        return True
+    short, long = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) < _MIN_MATCH_LENGTH:
+        return False
+    # Word-prefix: long starts with short and the next char is a space or end
+    if long.startswith(short) and (len(long) == len(short) or long[len(short)] == " "):
+        return True
+    # Full word-sequence containment: all words of short appear consecutively in long
+    short_words = short.split()
+    long_words = long.split()
+    if not short_words:
+        return False
+    for i in range(len(long_words) - len(short_words) + 1):
+        if long_words[i : i + len(short_words)] == short_words:
+            return True
+    return False
+
+
+def _find_in_extra_paths(
+    normalized: str,
+    extra_paths: list[Path],
+) -> tuple[int, str, str]:
+    """Search user-configured extra directories for a matching install folder or installer file.
+
+    Matching strategy (in priority order):
+    1. A *subdirectory* whose normalised name matches *normalized* via :func:`_names_match`
+       → folder_size() used, confidence "Medium".
+    2. An *installer file* (exe/msi/zip/…) whose stem matches → file size used,
+       confidence "Low" (installer ≠ installed size, but beats 0).
+
+    Returns ``(bytes, confidence, notes)`` — all empty/zero if no match found.
+    """
+    if not extra_paths or not normalized or len(normalized) < _MIN_MATCH_LENGTH:
+        return 0, "", ""
+
+    # Pass 1 – subdirectory match (install dir was moved here)
+    for base in extra_paths:
+        if not base.is_dir():
+            continue
+        try:
+            children = list(base.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if not child.is_dir():
+                continue
+            child_norm = normalize_name(child.name)
+            if not child_norm:
+                continue
+            if _names_match(normalized, child_norm):
+                size, _ = folder_size(child)
+                if size > 0:
+                    return size, "Medium", f"Verzeichnis gefunden in Extra-Pfad: {child}"
+
+    # Pass 2 – installer file match (setup EXE/MSI/archive present)
+    for base in extra_paths:
+        if not base.is_dir():
+            continue
+        try:
+            children = list(base.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if not child.is_file():
+                continue
+            if child.suffix.lower() not in _INSTALLER_EXTENSIONS:
+                continue
+            stem_norm = normalize_name(child.stem)
+            if len(stem_norm) < _MIN_MATCH_LENGTH:
+                continue
+            if _names_match(normalized, stem_norm):
+                try:
+                    size = child.stat().st_size
+                except OSError:
+                    continue
+                if size > 0:
+                    return size, "Low", f"Installer-Datei in Extra-Pfad: {child.name}"
+
+    return 0, "", ""
+
+
 def _safe_query_value(key, value_name: str, default: str = "") -> str:
     try:
         return str(winreg.QueryValueEx(key, value_name)[0]).strip()
@@ -257,7 +358,12 @@ def _parse_install_date(raw: str) -> str:
     return raw
 
 
-def _estimate_program_bytes(install_path: str, reg_estimated_kb: int = 0) -> tuple[int, int, int, int, int, str, str]:
+def _estimate_program_bytes(
+    install_path: str,
+    reg_estimated_kb: int = 0,
+    normalized_name: str = "",
+    extra_paths: list[Path] | None = None,
+) -> tuple[int, int, int, int, int, str, str]:
     install_dir = Path(install_path) if install_path else Path()
     install_bytes, _ = folder_size(install_dir) if install_path else (0, 0)
     user_data_bytes = 0
@@ -267,6 +373,20 @@ def _estimate_program_bytes(install_path: str, reg_estimated_kb: int = 0) -> tup
         # Best case: install folder was accessible and sized directly
         confidence = "High"
         notes = "Install path sized directly."
+    elif extra_paths and normalized_name:
+        # Second priority: search user-configured extra paths
+        extra_bytes, extra_conf, extra_notes = _find_in_extra_paths(normalized_name, extra_paths)
+        if extra_bytes > 0:
+            install_bytes = extra_bytes
+            confidence = extra_conf
+            notes = extra_notes
+        elif reg_estimated_kb > 0:
+            install_bytes = reg_estimated_kb * 1024
+            confidence = "Medium"
+            notes = "Größe vom Installer-Verzeichnis nicht messbar; Registry-Schätzung verwendet."
+        else:
+            confidence = "Low"
+            notes = "Install location missing or inaccessible."
     elif reg_estimated_kb > 0:
         # Fallback: install folder missing/moved — use registry EstimatedSize (stored in KiB)
         install_bytes = reg_estimated_kb * 1024
@@ -280,9 +400,14 @@ def _estimate_program_bytes(install_path: str, reg_estimated_kb: int = 0) -> tup
     return install_bytes, user_data_bytes, cache_bytes, capture_bytes, total, confidence, notes
 
 
-def scan_installed_programs(progress_callback: Callable[[str, str], None] | None = None) -> list[ProgramEntry]:
+def scan_installed_programs(
+    progress_callback: Callable[[str, str], None] | None = None,
+    extra_paths: list[Path] | None = None,
+) -> list[ProgramEntry]:
     if winreg is None:
         return []
+
+    _extra = [Path(p) for p in (extra_paths or []) if p]
 
     hive_map = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}
     programs: dict[str, ProgramEntry] = {}
@@ -316,7 +441,7 @@ def scan_installed_programs(progress_callback: Callable[[str, str], None] | None
                     progress_callback("Sizing program", install_location or raw_name)
                 normalized = normalize_name(raw_name)
                 install_bytes, user_data_bytes, cache_bytes, capture_bytes, total, confidence, notes = _estimate_program_bytes(
-                    install_location, reg_estimated_kb
+                    install_location, reg_estimated_kb, normalized, _extra
                 )
                 record_type = _program_record_type(raw_name, publisher)
                 category = _program_category(raw_name)

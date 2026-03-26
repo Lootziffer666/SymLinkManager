@@ -10,6 +10,7 @@ from tkinter import StringVar, filedialog, messagebox, ttk
 import customtkinter as ctk
 
 from core.models import ActionPlan
+from core import settings as _settings
 from core.scanners import filter_programs, match_import_list, scan_installed_programs
 from gui.module_api import AppContext, BaseModule
 
@@ -97,6 +98,28 @@ class ProgramsModule(BaseModule):
         self.count_label = ctk.CTkLabel(filter_frame, text="0 Programme")
         self.count_label.pack(side="right", padx=8)
 
+        # --- Extra search paths bar ---
+        extra_frame = ctk.CTkFrame(container)
+        extra_frame.pack(fill="x", padx=10, pady=(2, 0))
+
+        ctk.CTkLabel(extra_frame, text="📁 Extra-Suchpfade:").pack(side="left", padx=(4, 6))
+
+        # Scrollable path-chip area
+        self._extra_paths_frame = ctk.CTkFrame(extra_frame, fg_color="transparent")
+        self._extra_paths_frame.pack(side="left", fill="x", expand=True, padx=2)
+
+        ctk.CTkButton(
+            extra_frame,
+            text="+ Pfad hinzufügen",
+            width=130,
+            height=26,
+            command=self._add_extra_path,
+        ).pack(side="right", padx=4, pady=2)
+
+        # Load persisted extra paths and render chips
+        self._extra_paths: list[str] = _settings.load().get("extra_search_paths", [])
+        self._render_path_chips()
+
         # --- Select all / none bar ---
         sel_bar = ctk.CTkFrame(container)
         sel_bar.pack(fill="x", padx=10, pady=(0, 2))
@@ -165,6 +188,91 @@ class ProgramsModule(BaseModule):
         self._apply_tree_tags()
 
     # ------------------------------------------------------------------
+    # Extra search paths management
+    # ------------------------------------------------------------------
+    def _render_path_chips(self) -> None:
+        """Redraw the row of path chips inside _extra_paths_frame."""
+        for w in self._extra_paths_frame.winfo_children():
+            w.destroy()
+        if not self._extra_paths:
+            ctk.CTkLabel(
+                self._extra_paths_frame,
+                text="(keine)",
+                text_color="gray",
+                font=ctk.CTkFont(size=11),
+            ).pack(side="left", padx=2)
+            return
+        for path in self._extra_paths:
+            chip = ctk.CTkFrame(self._extra_paths_frame, corner_radius=6)
+            chip.pack(side="left", padx=3, pady=2)
+            # Show "Drive:\…\last_folder" so the relevant parts are always visible
+            p = Path(path)
+            parts = p.parts
+            if len(path) <= 40:
+                short = path
+            elif len(parts) >= 2:
+                short = str(Path(parts[0])) + "\\…\\" + parts[-1]
+            else:
+                short = "…" + path[-37:]
+            lbl = ctk.CTkLabel(chip, text=short, font=ctk.CTkFont(size=11))
+            lbl.pack(side="left", padx=(6, 2))
+            # Show full path in tooltip on hover (via bind on label)
+            lbl.bind("<Enter>", lambda e, fp=path: self._show_path_tooltip(e, fp))
+            lbl.bind("<Leave>", lambda e: self._hide_path_tooltip())
+            ctk.CTkButton(
+                chip,
+                text="×",
+                width=22,
+                height=22,
+                fg_color="transparent",
+                hover_color="#884444",
+                command=lambda p=path: self._remove_extra_path(p),
+            ).pack(side="left", padx=(0, 4))
+
+    def _show_path_tooltip(self, event, full_path: str) -> None:
+        try:
+            import tkinter as tk
+            if hasattr(self, "_tooltip") and self._tooltip:
+                self._tooltip.destroy()
+            tw = tk.Toplevel()
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{event.x_root + 8}+{event.y_root + 8}")
+            tk.Label(tw, text=full_path, background="#333333", foreground="#FFFFFF",
+                     relief="solid", borderwidth=1, font=("Segoe UI", 9)).pack()
+            self._tooltip = tw
+        except Exception:
+            pass
+
+    def _hide_path_tooltip(self) -> None:
+        try:
+            if hasattr(self, "_tooltip") and self._tooltip:
+                self._tooltip.destroy()
+                self._tooltip = None
+        except Exception:
+            pass
+
+    def _add_extra_path(self) -> None:
+        chosen = filedialog.askdirectory(title="Extra-Suchpfad hinzufügen (z. B. F:\\Installer)")
+        if not chosen:
+            return
+        chosen = str(Path(chosen))
+        if chosen not in self._extra_paths:
+            self._extra_paths.append(chosen)
+            self._save_extra_paths()
+            self._render_path_chips()
+
+    def _remove_extra_path(self, path: str) -> None:
+        if path in self._extra_paths:
+            self._extra_paths.remove(path)
+            self._save_extra_paths()
+            self._render_path_chips()
+
+    def _save_extra_paths(self) -> None:
+        data = _settings.load()
+        data["extra_search_paths"] = self._extra_paths
+        _settings.save(data)
+
+    # ------------------------------------------------------------------
     def _scan_threaded(self) -> None:
         self.scan_btn.configure(state="disabled")
         self._progress_win = _ProgressWindow(self._container)
@@ -179,7 +287,11 @@ class ProgramsModule(BaseModule):
             self._progress_win.after(0, _update)
 
     def _scan_worker(self) -> None:
-        programs = scan_installed_programs(progress_callback=self._scan_progress)
+        extra = [Path(p) for p in self._extra_paths if p]
+        programs = scan_installed_programs(
+            progress_callback=self._scan_progress,
+            extra_paths=extra if extra else None,
+        )
         self._all_programs = programs
         self.prog_tree.after(0, self._finish_scan)
 
