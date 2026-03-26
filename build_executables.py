@@ -37,7 +37,7 @@ def _run(cmd: list[str], label: str) -> None:
     if result.returncode != 0:
         print(f"\n❌ {label} failed (exit code {result.returncode})")
         sys.exit(result.returncode)
-    print(f"\n✅ {label} succeeded")
+    print(f"\n[OK] {label} succeeded")
 
 
 def _collect_datas(entries: list[tuple[str, str]]) -> list[str]:
