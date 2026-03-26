@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import threading
+import tkinter as tk
 from pathlib import Path
 from tkinter import StringVar, filedialog, messagebox, ttk
 
@@ -13,6 +14,8 @@ from core.models import ActionPlan
 from core import settings as _settings
 from core.scanners import filter_programs, match_import_list, scan_installed_programs
 from gui.module_api import AppContext, BaseModule
+
+_MAX_PATH_CHIP_LENGTH = 40  # characters; longer paths are condensed to Drive:\…\LastFolder
 
 
 def _pal():
@@ -208,12 +211,12 @@ class ProgramsModule(BaseModule):
             # Show "Drive:\…\last_folder" so the relevant parts are always visible
             p = Path(path)
             parts = p.parts
-            if len(path) <= 40:
+            if len(path) <= _MAX_PATH_CHIP_LENGTH:
                 short = path
             elif len(parts) >= 2:
                 short = str(Path(parts[0])) + "\\…\\" + parts[-1]
             else:
-                short = "…" + path[-37:]
+                short = "…" + path[-(  _MAX_PATH_CHIP_LENGTH - 3):]
             lbl = ctk.CTkLabel(chip, text=short, font=ctk.CTkFont(size=11))
             lbl.pack(side="left", padx=(6, 2))
             # Show full path in tooltip on hover (via bind on label)
@@ -231,7 +234,6 @@ class ProgramsModule(BaseModule):
 
     def _show_path_tooltip(self, event, full_path: str) -> None:
         try:
-            import tkinter as tk
             if hasattr(self, "_tooltip") and self._tooltip:
                 self._tooltip.destroy()
             tw = tk.Toplevel()

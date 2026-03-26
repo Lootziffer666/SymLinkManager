@@ -28,6 +28,13 @@ try:
 except ImportError:
     winreg = None
 
+try:
+    import msilib  # type: ignore  # Windows stdlib; deprecated in 3.11 but still present
+    _MSILIB_AVAILABLE = True
+except ImportError:
+    msilib = None  # type: ignore
+    _MSILIB_AVAILABLE = False
+
 PROGRAM_KEYS = [
     ("HKLM", r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
     ("HKLM", r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
@@ -193,9 +200,112 @@ def match_import_list(programs: list[ProgramEntry], import_lines: list[str]) -> 
 
 _INSTALLER_EXTENSIONS = {".exe", ".msi", ".zip", ".7z", ".rar", ".iso", ".cab"}
 
+# Matches Windows Installer GUID directory names like {3D9F7CE8-8674-45A4-9D0D-C9072339DE3D}
+_GUID_RE = re.compile(
+    r"^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$"
+)
+
 # Minimum number of characters a normalised name must have before fuzzy-matching
 # is attempted.  Short tokens like "ai" or "vr" would cause too many false positives.
 _MIN_MATCH_LENGTH = 5
+
+# Module-level cache: maps frozenset-of-path-strings → MSI product index.
+# Built once per unique extra_paths combination (i.e. once per scan session).
+_MSI_INDEX_CACHE: dict[frozenset, dict[str, tuple[Path, int]]] = {}
+
+
+def _is_guid_name(name: str) -> bool:
+    """Return True when *name* looks like a Windows Installer GUID folder."""
+    return bool(_GUID_RE.match(name))
+
+
+def _read_msi_product_name(msi_path: Path) -> str:
+    """Return the ``ProductName`` property stored in *msi_path*, or ``""`` on any error.
+
+    Uses ``msilib`` (Windows stdlib).  Safe to call on non-Windows — returns ``""``
+    immediately when the library is unavailable.
+    """
+    if not _MSILIB_AVAILABLE:
+        return ""
+    try:
+        db = msilib.OpenDatabase(str(msi_path), msilib.MSIDBOPEN_READONLY)  # type: ignore[union-attr]
+        view = db.OpenView("SELECT `Value` FROM `Property` WHERE `Property`='ProductName'")
+        view.Execute(None)
+        record = view.Fetch()
+        if record:
+            return record.GetString(1)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("Could not read MSI ProductName from %s: %s", msi_path, exc)
+    return ""
+
+
+def _build_msi_product_index(
+    extra_paths: list[Path],
+) -> dict[str, tuple[Path, int]]:
+    """Scan *extra_paths* for ``.msi`` files and build a name → (path, size) index.
+
+    Handles two structures:
+    * **Flat installers** — ``.msi`` files sitting directly inside an extra path.
+    * **Windows Installer cache** — GUID-named subdirectories
+      (``{XXXXXXXX-…}``) each containing one or more ``.msi`` files.
+
+    For every ``.msi`` found, the ``ProductName`` MSI property is read via
+    :func:`_read_msi_product_name` (Windows only).  If that fails or returns an
+    empty string, the file stem is used as a fallback label so at least
+    stem-based matching can still work.
+
+    Returns a dict mapping *normalised product name* → ``(msi_path, file_size_bytes)``.
+    The dict is cached at module level keyed by the frozen set of path strings so it
+    is only built once per unique ``extra_paths`` configuration per process run.
+    """
+    cache_key: frozenset = frozenset(str(p) for p in extra_paths)
+    if cache_key in _MSI_INDEX_CACHE:
+        return _MSI_INDEX_CACHE[cache_key]
+
+    index: dict[str, tuple[Path, int]] = {}
+
+    for base in extra_paths:
+        if not base.is_dir():
+            continue
+        try:
+            children = list(base.iterdir())
+        except OSError:
+            continue
+
+        for child in children:
+            if child.is_file() and child.suffix.lower() == ".msi":
+                # Flat MSI file directly in extra_path
+                _index_msi_file(child, index)
+            elif child.is_dir() and _is_guid_name(child.name):
+                # Windows Installer GUID cache directory — recurse one level
+                try:
+                    for sub in child.iterdir():
+                        if sub.is_file() and sub.suffix.lower() == ".msi":
+                            _index_msi_file(sub, index)
+                except OSError:
+                    continue
+
+    _MSI_INDEX_CACHE[cache_key] = index
+    return index
+
+
+def _index_msi_file(msi_path: Path, index: dict[str, tuple[Path, int]]) -> None:
+    """Read *msi_path* and add an entry to *index* using the MSI ProductName (or stem)."""
+    try:
+        size = msi_path.stat().st_size
+    except OSError:
+        return
+    if size == 0:
+        return
+    product_name = _read_msi_product_name(msi_path)
+    label = product_name if product_name else msi_path.stem
+    norm = normalize_name(label)
+    if len(norm) >= _MIN_MATCH_LENGTH:
+        # Keep the largest MSI if multiple match the same name
+        existing = index.get(norm)
+        if existing is None or size > existing[1]:
+            index[norm] = (msi_path, size)
 
 
 def _names_match(a: str, b: str) -> bool:
@@ -238,8 +348,12 @@ def _find_in_extra_paths(
     Matching strategy (in priority order):
     1. A *subdirectory* whose normalised name matches *normalized* via :func:`_names_match`
        → folder_size() used, confidence "Medium".
+    1.5 MSI product index — looks up the pre-built :func:`_build_msi_product_index` result
+       (covers Windows Installer GUID cache dirs like ``{GUID}`` containing ``.msi`` files);
+       confidence "Medium" when ProductName matched, "Low" when stem-matched.
     2. An *installer file* (exe/msi/zip/…) whose stem matches → file size used,
        confidence "Low" (installer ≠ installed size, but beats 0).
+       Also recurses one level into GUID-named subdirs for exe/msi files.
 
     Returns ``(bytes, confidence, notes)`` — all empty/zero if no match found.
     """
@@ -265,7 +379,14 @@ def _find_in_extra_paths(
                 if size > 0:
                     return size, "Medium", f"Verzeichnis gefunden in Extra-Pfad: {child}"
 
+    # Pass 1.5 – Windows Installer GUID cache / MSI product index
+    msi_index = _build_msi_product_index(extra_paths)
+    for idx_norm, (msi_path, size) in msi_index.items():
+        if _names_match(normalized, idx_norm):
+            return size, "Medium", f"MSI-Paket gefunden (ProductName): {msi_path.name}"
+
     # Pass 2 – installer file match (setup EXE/MSI/archive present)
+    # Scans flat files and also recurses one level into GUID subdirs for exe/msi.
     for base in extra_paths:
         if not base.is_dir():
             continue
@@ -273,21 +394,28 @@ def _find_in_extra_paths(
             children = list(base.iterdir())
         except OSError:
             continue
+        candidates: list[Path] = []
         for child in children:
-            if not child.is_file():
-                continue
-            if child.suffix.lower() not in _INSTALLER_EXTENSIONS:
-                continue
-            stem_norm = normalize_name(child.stem)
+            if child.is_file() and child.suffix.lower() in _INSTALLER_EXTENSIONS:
+                candidates.append(child)
+            elif child.is_dir() and _is_guid_name(child.name):
+                try:
+                    for sub in child.iterdir():
+                        if sub.is_file() and sub.suffix.lower() in {".exe", ".msi"}:
+                            candidates.append(sub)
+                except OSError:
+                    continue
+        for candidate in candidates:
+            stem_norm = normalize_name(candidate.stem)
             if len(stem_norm) < _MIN_MATCH_LENGTH:
                 continue
             if _names_match(normalized, stem_norm):
                 try:
-                    size = child.stat().st_size
+                    size = candidate.stat().st_size
                 except OSError:
                     continue
                 if size > 0:
-                    return size, "Low", f"Installer-Datei in Extra-Pfad: {child.name}"
+                    return size, "Low", f"Installer-Datei in Extra-Pfad: {candidate.name}"
 
     return 0, "", ""
 
@@ -408,6 +536,10 @@ def scan_installed_programs(
         return []
 
     _extra = [Path(p) for p in (extra_paths or []) if p]
+
+    # Invalidate the MSI product index cache so a fresh scan always re-reads the
+    # installer directories (the user may have changed extra_paths since the last run).
+    _MSI_INDEX_CACHE.clear()
 
     hive_map = {"HKLM": winreg.HKEY_LOCAL_MACHINE, "HKCU": winreg.HKEY_CURRENT_USER}
     programs: dict[str, ProgramEntry] = {}
