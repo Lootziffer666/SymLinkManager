@@ -1,0 +1,46 @@
+name: Build Executables
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows EXEs
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Tabula/requirements/build.txt
+          pip install -r Tabula/requirements/gui.txt
+          pip install -r Tabula/requirements/core.txt
+          pip install -r Tabula/requirements/ai_companion.txt
+          pip install pyyaml
+
+      - name: Build executables
+        run: python build_executables.py --onefile
+
+      - name: Upload Tabula
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tabula
+          path: builds/Tabula.exe
+
+      - name: Upload TabulaRasa
+        uses: actions/upload-artifact@v4
+        with:
+          name: TabulaRasa
+          path: builds/TabulaRasa.exe

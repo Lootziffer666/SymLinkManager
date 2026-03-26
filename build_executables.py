@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
-DIST_DIR = REPO_ROOT / "dist"
+BUILDS_DIR = REPO_ROOT / "builds"
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +116,8 @@ def build_tabula(*, onefile: bool = False) -> Path:
         "--windowed",
         "--noconfirm",
         "--clean",
+        "--distpath", str(BUILDS_DIR),
+        "--workpath", str(REPO_ROOT / "build"),
         "--paths", str(REPO_ROOT / "Tabula"),
         *datas,
         *hidden,
@@ -125,8 +127,8 @@ def build_tabula(*, onefile: bool = False) -> Path:
 
     exe_suffix = ".exe" if sys.platform == "win32" else ""
     if onefile:
-        return DIST_DIR / f"Tabula{exe_suffix}"
-    return DIST_DIR / "Tabula"
+        return BUILDS_DIR / f"Tabula{exe_suffix}"
+    return BUILDS_DIR / "Tabula"
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +166,8 @@ def build_tabula_rasa(*, onefile: bool = False) -> Path:
         "--windowed",
         "--noconfirm",
         "--clean",
+        "--distpath", str(BUILDS_DIR),
+        "--workpath", str(REPO_ROOT / "build"),
         "--paths", str(REPO_ROOT / "TabulaRasa"),
         *datas,
         *hidden,
@@ -173,8 +177,8 @@ def build_tabula_rasa(*, onefile: bool = False) -> Path:
 
     exe_suffix = ".exe" if sys.platform == "win32" else ""
     if onefile:
-        return DIST_DIR / f"TabulaRasa{exe_suffix}"
-    return DIST_DIR / "TabulaRasa"
+        return BUILDS_DIR / f"TabulaRasa{exe_suffix}"
+    return BUILDS_DIR / "TabulaRasa"
 
 
 # ---------------------------------------------------------------------------

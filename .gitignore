@@ -10,6 +10,7 @@ ShellGuard_Backups/
 
 # Build artifacts
 build/
+builds/
 dist/
 *.spec
 
