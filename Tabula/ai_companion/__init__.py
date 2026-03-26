@@ -1,0 +1,1 @@
+"""Tabula AI companion package."""

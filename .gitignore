@@ -8,6 +8,10 @@ ShellGuard_Backups/
 *.xml
 *.json.bak
 
+# Logs
+Tabula/logs/
+TabulaRasa/logs/
+
 # Build artifacts
 build/
 builds/
