@@ -231,7 +231,8 @@ CI baut auf `windows-latest` und stellt sie als GitHub-Actions-Artifacts bereit.
 
 ### Bekannte Einschränkungen
 
-- Voller Funktionsumfang erfordert Windows + Admin-Rechte. Auf Linux/macOS startet die **Tabula**-GUI (tkinter/customtkinter), aber Registry-Scan, Task-Scheduler-Analyse und Autorun-Triage sind nicht verfügbar. **TabulaRasa** kann auf Linux/macOS eingeschränkt genutzt werden (Temp/Cache-Scans auf Basis des lokalen Dateisystems), Windows-spezifische Purge-Kategorien (z. B. Shader-Caches, Orphaned App Data aus AppData) sind jedoch plattformabhängig.
+- **Tabula** erfordert für den vollen Funktionsumfang Windows + Admin-Rechte. Auf Linux/macOS startet die GUI (customtkinter), aber Registry-Scan, Task-Scheduler-Analyse und Autorun-Triage sind **nicht verfügbar**.
+- **TabulaRasa** startet auf Linux/macOS, aber Windows-spezifische Purge-Kategorien (Shader-Caches, AppData-Pfade) werden **nicht erkannt und sind nicht verfügbar**.
 - Archive-Passwortprüfung unterstützt derzeit nur ZIP nativ; RAR und 7z benötigen die entsprechenden Python-Bibliotheken (`py7zr`, `rarfile`).
 - Micro-App-Add-ons sind als „Nightly/Pre-Production" markiert und noch nicht vollständig getestet.
 
